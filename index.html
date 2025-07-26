@@ -1,0 +1,228 @@
+<script>
+    // Global variables
+    let selectedFile = null;
+    let selectedOption = 'all';
+    let sessionId = null;
+
+    // File input change event
+    document.getElementById('file-input').addEventListener('change', function(e) {
+        if (e.target.files.length > 0) {
+            handleFileSelection(e.target.files[0]);
+        }
+    });
+
+    function handleDrop(event) {
+        const file = event.dataTransfer.files[0];
+        if (file && file.type.includes('video')) {
+            handleFileSelection(file);
+        } else {
+            alert('Please upload a video file (MP4)');
+        }
+    }
+
+    function handleFileSelection(file) {
+        if (!file.type.includes('video') && !file.name.endsWith('.mp4')) {
+            alert('Please upload a video file (MP4)');
+            return;
+        }
+        selectedFile = file;
+        document.getElementById('filename').textContent = file.name;
+        document.getElementById('file-info').classList.remove('hidden');
+        document.getElementById('analyze-btn').disabled = false;
+    }
+
+    // Analysis option selection
+    function selectOption(option) {
+        selectedOption = option;
+        document.querySelectorAll('input[name="analysis-option"]').forEach(radio => {
+            radio.checked = radio.id === option;
+        });
+
+        if (option === 'custom') {
+            document.getElementById('custom-options').classList.remove('hidden');
+        } else {
+            document.getElementById('custom-options').classList.add('hidden');
+        }
+    }
+
+    // Start analysis - main function
+    async function startAnalysis() {
+        if (!selectedFile) return;
+
+        const formData = new FormData();
+        formData.append('video', selectedFile);
+        formData.append('analysis_type', selectedOption);
+
+        // Show progress UI
+        document.getElementById('status-container').classList.remove('hidden');
+        document.getElementById('results-section').classList.add('hidden');
+        document.getElementById('loading-section').classList.remove('hidden');
+        document.getElementById('upload-progress').style.width = '0%';
+        document.getElementById('progress-text').textContent = "Uploading video...";
+
+        try {
+            // Step 1: Upload the video file
+            const uploadResponse = await axios.post('/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: progressEvent => {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                    document.getElementById('upload-progress').style.width = percentCompleted + '%';
+                    document.getElementById('progress-text').textContent = `Uploading: ${percentCompleted}%`;
+                }
+            });
+
+            sessionId = uploadResponse.data.session_id;
+            document.getElementById('progress-text').textContent = "Starting video processing... This may take several minutes";
+
+            // Step 2: Trigger processing on backend
+            await axios.post(`/process/${sessionId}`);
+
+            // Step 3: Poll the backend for results until ready
+            await checkAnalysisStatus();
+
+        } catch (error) {
+            console.error('Error:', error);
+            document.getElementById('progress-text').textContent = "Error processing video: " + (error.response?.data?.error || error.message);
+        }
+    }
+
+    // Poll backend to get analysis results JSON
+    async function checkAnalysisStatus() {
+        try {
+            const response = await axios.get(`/api/results/${sessionId}`);
+            showResults(response.data);
+        } catch (error) {
+            if (error.response && error.response.status === 404) {
+                // Results not ready yet, keep polling
+                document.getElementById('progress-text').textContent = "Processing your video... Please wait.";
+                setTimeout(checkAnalysisStatus, 3000); // Retry after 3 seconds
+            } else {
+                console.error('Error checking status:', error);
+                document.getElementById('progress-text').textContent = "Error checking status: " + (error.response?.data?.error || error.message);
+            }
+        }
+    }
+
+    // Display the results in the UI
+    function showResults(data) {
+        document.getElementById('loading-section').classList.add('hidden');
+        document.getElementById('results-section').classList.remove('hidden');
+
+        // Display summary
+        document.getElementById('summary-content').textContent = data.summary || "No summary available";
+
+        // Display transcription if available
+        const transcriptionSection = document.getElementById('transcription-section');
+        const transcriptionContent = document.getElementById('transcription-content');
+        if (data.transcription) {
+            transcriptionContent.textContent = data.transcription;
+            transcriptionSection.classList.remove('hidden');
+        } else {
+            transcriptionSection.classList.add('hidden');
+        }
+
+        // Display video analysis if available
+        if (data.frames && data.frames.length > 0) {
+            document.getElementById('frame-count').textContent = data.frames.length;
+            document.getElementById('video-analysis-section').classList.remove('hidden');
+
+            let objectCount = 0;
+            let peopleCount = 0;
+            data.detections.forEach(detection => {
+                objectCount += detection.detections?.length || 0;
+                peopleCount += detection.detections?.filter(d => d.class === 'person')?.length || 0;
+            });
+
+            document.getElementById('object-count').textContent = objectCount;
+            document.getElementById('people-count').textContent = peopleCount;
+
+            const framesContainer = document.getElementById('frames-container');
+            framesContainer.innerHTML = '';
+
+            data.frames.forEach((frame, index) => {
+                const frameDetections = data.detections?.find(d => d.frame === frame)?.detections || [];
+                const frameDescription = data.descriptions?.find(d => d.frame === frame)?.description || "No description";
+
+                const frameCard = document.createElement('div');
+                frameCard.className = 'bg-gray-50 rounded-lg border overflow-hidden';
+                frameCard.innerHTML = `
+                    <div class="relative">
+                        <img src="/static/frames/${sessionId}/${frame}" alt="Analyzed frame ${index + 1}" class="w-full h-48 object-cover">
+                        <div class="absolute bottom-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                            Frame ${index + 1}
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <div class="text-sm text-gray-500 mb-2 relative group">
+                            ${frameDescription}
+                            <span class="absolute bottom-full mb-2 hidden group-hover:block bg-black text-white text-xs rounded py-1 px-2 z-10">
+                                ${frameDescription}
+                            </span>
+                        </div>
+                        ${frameDetections.length > 0 ? `
+                            <div class="text-xs">
+                                <div class="font-medium text-gray-700 mb-1">Detections:</div>
+                                ${frameDetections.map(d => `
+                                    <div class="flex items-center mb-1">
+                                        <span class="inline-block w-2 h-2 rounded-full mr-2 bg-${d.class === 'person' ? 'green' : 'blue'}-500"></span>
+                                        ${d.class} (${Math.round(d.confidence * 100)}%)
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+                framesContainer.appendChild(frameCard);
+            });
+        } else {
+            document.getElementById('video-analysis-section').classList.add('hidden');
+        }
+
+        // Scroll results into view smoothly
+        document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Export functionality (JSON, CSV, TXT)
+    function exportResults(format) {
+        if (!sessionId) return;
+
+        switch(format) {
+            case 'json':
+                window.location.href = `/api/results/${sessionId}?download=true`;
+                break;
+            case 'csv':
+                let csvContent = "Frame,Description,Detections\n";
+                document.querySelectorAll('#frames-container > div').forEach(frame => {
+                    const frameNum = frame.querySelector('.absolute > div').textContent;
+                    const desc = frame.querySelector('.text-sm').textContent;
+                    const detections = [...frame.querySelectorAll('.text-xs > div:nth-child(n+2)')]
+                        .map(d => d.textContent.trim()).join('; ');
+                    csvContent += `"${frameNum}","${desc}","${detections}"\n`;
+                });
+
+                const csvBlob = new Blob([csvContent], { type: 'text/csv' });
+                const csvUrl = URL.createObjectURL(csvBlob);
+                const csvLink = document.createElement('a');
+                csvLink.href = csvUrl;
+                csvLink.download = `frame_analysis_${sessionId}.csv`;
+                csvLink.click();
+                break;
+            default:
+                const summary = document.getElementById('summary-content').textContent;
+                const transcription = document.getElementById('transcription-content').textContent;
+                const content = `VIDEO ANALYSIS REPORT (${new Date().toLocaleString()})\n\n`
+                                + `SUMMARY\n${summary}\n\n`
+                                + `TRANSCRIPTION\n${transcription}`;
+
+                const blob = new Blob([content], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `video_analysis_${sessionId}.txt`;
+                a.click();
+        }
+    }
+
+    // Initialize UI with default option
+    selectOption('all');
+</script>

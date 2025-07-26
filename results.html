@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Analysis Results</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f5f7fa;
+    }
+    h1 {
+      color: #333;
+    }
+    #status {
+      font-size: 1.2em;
+      margin-bottom: 20px;
+    }
+    #error {
+      color: red;
+      font-weight: bold;
+    }
+    .results-container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 5px rgb(0 0 0 / 0.1);
+      max-width: 800px;
+      margin: auto;
+    }
+    .section {
+      margin-bottom: 20px;
+    }
+    .section h2 {
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 5px;
+      color: #444;
+    }
+    ul {
+      padding-left: 20px;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 5px;
+    }
+    #download-btn {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1em;
+      text-decoration: none;
+      margin-top: 10px;
+      display: inline-block;
+    }
+    #download-btn:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+
+<div class="results-container">
+  <h1>Video Analysis Results</h1>
+  <div id="status">Processing your video, please wait...</div>
+  <div id="error" style="display:none;"></div>
+  
+  <div id="results" style="display:none;">
+    <div class="section" id="summary-section">
+      <h2>Summary</h2>
+      <p id="summary-text"></p>
+    </div>
+
+    <div class="section" id="captions-section">
+      <h2>Image Captions</h2>
+      <ul id="captions-list"></ul>
+    </div>
+    
+    <div class="section" id="objects-section">
+      <h2>Detected Objects</h2>
+      <ul id="objects-list"></ul>
+    </div>
+
+    <div class="section" id="transcription-section">
+      <h2>Audio Transcription</h2>
+      <p id="transcription-text"></p>
+    </div>
+    
+    <a id="download-btn" href="#" download>Download Results (JSON)</a>
+  </div>
+</div>
+
+<script>
+  const sessionId = "{{ session_id }}";  // Passed from Flask render_template context
+  const resultsUrl = `/api/results/${sessionId}`;
+  const downloadUrl = `/api/results/${sessionId}?download=true`;
+
+  const statusEl = document.getElementById('status');
+  const errorEl = document.getElementById('error');
+  const resultsEl = document.getElementById('results');
+  const summaryText = document.getElementById('summary-text');
+  const captionsList = document.getElementById('captions-list');
+  const objectsList = document.getElementById('objects-list');
+  const transcriptionText = document.getElementById('transcription-text');
+  const downloadBtn = document.getElementById('download-btn');
+
+  function renderResults(data) {
+    statusEl.style.display = 'none';
+    errorEl.style.display = 'none';
+    resultsEl.style.display = 'block';
+
+    // Summary
+    summaryText.textContent = data.summary || "No summary available.";
+
+    // Captions - Expecting array of captions
+    captionsList.innerHTML = "";
+    if (Array.isArray(data.captions) && data.captions.length > 0) {
+      data.captions.forEach(caption => {
+        let li = document.createElement("li");
+        li.textContent = caption;
+        captionsList.appendChild(li);
+      });
+    } else {
+      captionsList.innerHTML = "<li>No captions found.</li>";
+    }
+
+    // Objects
+    objectsList.innerHTML = "";
+    if (Array.isArray(data.detected_objects) && data.detected_objects.length > 0) {
+      data.detected_objects.forEach(obj => {
+        let li = document.createElement("li");
+        li.textContent = `${obj.label} (Confidence: ${(obj.confidence*100).toFixed(1)}%)`;
+        objectsList.appendChild(li);
+      });
+    } else {
+      objectsList.innerHTML = "<li>No objects detected.</li>";
+    }
+
+    // Transcription
+    transcriptionText.textContent = data.transcription || "No transcription available.";
+
+    // Setup download link for JSON file
+    downloadBtn.href = downloadUrl;
+  }
+
+  async function checkResults() {
+    try {
+      const resp = await fetch(resultsUrl);
+      if (resp.status === 404) {
+        // Results not ready yet
+        statusEl.textContent = "Processing your video, please wait...";
+        setTimeout(checkResults, 3000);  // Check again in 3 seconds
+        return;
+      }
+      if (!resp.ok) {
+        throw new Error(`Server error: ${resp.status}`);
+      }
+      const data = await resp.json();
+      renderResults(data);
+    } catch (error) {
+      statusEl.style.display = 'none';
+      errorEl.style.display = 'block';
+      errorEl.textContent = `Error checking status: ${error.message}`;
+      resultsEl.style.display = 'none';
+    }
+  }
+
+  // Start polling after page load
+  window.onload = () => {
+    checkResults();
+  };
+</script>
+
+</body>
+</html>
