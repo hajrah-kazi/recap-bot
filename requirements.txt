@@ -1,0 +1,7 @@
+Flask==2.0.1
+assemblyai==1.0.0
+torch==1.9.0
+transformers==4.11.3
+opencv-python==4.5.3.20210927
+Pillow==8.4.0
+python-dotenv==0.19.1
