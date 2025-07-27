@@ -1,3 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Video Analysis Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        .file-upload {
+            border: 2px dashed #cbd5e0;
+            transition: all 0.3s ease;
+        }
+        .file-upload:hover {
+            border-color: #4299e1;
+            background-color: #ebf8ff;
+        }
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+        .option-card {
+            transition: all 0.3s ease;
+        }
+        .option-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Video Analysis Dashboard</h1>
+            <p class="text-gray-600 mt-2">Upload an MP4 file to analyze audio and video content</p>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div id="upload-container" 
+                 class="file-upload rounded-lg p-8 text-center cursor-pointer"
+                 ondragover="event.preventDefault(); this.classList.add('border-blue-400', 'bg-blue-50');" 
+                 ondragleave="this.classList.remove('border-blue-400', 'bg-blue-50');"
+                 ondrop="event.preventDefault(); this.classList.remove('border-blue-400', 'bg-blue-50'); handleDrop(event);">
+                <input type="file" id="file-input" class="hidden" accept=".mp4" />
+                <div class="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                </div>
+                <h3 class="text-lg font-medium text-gray-700">Drag & drop your MP4 file here</h3>
+                <p class="text-gray-500 mt-1">or</p>
+                <button onclick="document.getElementById('file-input').click()" 
+                        class="mt-4 px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    Browse Files
+                </button>
+            </div>
+            <div id="file-info" class="mt-4 hidden">
+                <p class="text-gray-700"><span class="font-medium">Selected file:</span> <span id="filename"></span></p>
+                <div class="mt-2 w-full bg-gray-200 rounded-full h-2.5">
+                    <div id="upload-progress" class="progress-bar bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Options -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Analysis Options</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="option-card border rounded-lg p-4 cursor-pointer" onclick="selectOption('all')">
+                    <div class="flex items-center">
+                        <input type="radio" name="analysis-option" id="all" class="mr-2" checked>
+                        <label for="all" class="text-gray-700 font-medium">Complete Analysis</label>
+                    </div>
+                    <p class="text-gray-500 text-sm mt-2">Audio + Video processing with full summary</p>
+                </div>
+                <div class="option-card border rounded-lg p-4 cursor-pointer" onclick="selectOption('audio')">
+                    <div class="flex items-center">
+                        <input type="radio" name="analysis-option" id="audio" class="mr-2">
+                        <label for="audio" class="text-gray-700 font-medium">Audio Only</label>
+                    </div>
+                    <p class="text-gray-500 text-sm mt-2">Transcription and audio summary</p>
+                </div>
+                <div class="option-card border rounded-lg p-4 cursor-pointer" onclick="selectOption('video')">
+                    <div class="flex items-center">
+                        <input type="radio" name="analysis-option" id="video" class="mr-2">
+                        <label for="video" class="text-gray-700 font-medium">Video Only</label>
+                    </div>
+                    <p class="text-gray-500 text-sm mt-2">Frame analysis and video summary</p>
+                </div>
+                <div class="option-card border rounded-lg p-4 cursor-pointer" onclick="selectOption('custom')">
+                    <div class="flex items-center">
+                        <input type="radio" name="analysis-option" id="custom" class="mr-2">
+                        <label for="custom" class="text-gray-700 font-medium">Custom Selection</label>
+                    </div>
+                    <p class="text-gray-500 text-sm mt-2">Choose specific processing options</p>
+                </div>
+            </div>
+
+            <!-- Custom Options (hidden by default) -->
+            <div id="custom-options" class="mt-4 pt-4 border-t hidden">
+                <h3 class="text-lg font-medium text-gray-700 mb-3">Select Components:</h3>
+                <div class="space-y-2">
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" class="rounded text-blue-600" checked>
+                        <span class="ml-2 text-gray-700">Audio transcription</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" class="rounded text-blue-600" checked>
+                        <span class="ml-2 text-gray-700">Audio summary</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" class="rounded text-blue-600" checked>
+                        <span class="ml-2 text-gray-700">Frame extraction</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" class="rounded text-blue-600" checked>
+                        <span class="ml-2 text-gray-700">Frame captions</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" class="rounded text-blue-600" checked>
+                        <span class="ml-2 text-gray-700">Video summary</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Button -->
+        <div class="text-center">
+            <button id="analyze-btn" 
+                    class="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled
+                    onclick="startAnalysis()">
+                Start Analysis
+            </button>
+        </div>
+
+        <!-- Status and Results -->
+        <div id="status-container" class="mt-8 hidden">
+            <div id="loading-section" class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="flex items-center">
+                    <div class="spinner border-4 border-blue-500 border-t-transparent rounded-full w-6 h-6 mr-3"></div>
+                    <span class="text-gray-700 font-medium">Processing your video...</span>
+                </div>
+                <div id="progress-text" class="text-sm text-gray-500 mt-2"></div>
+            </div>
+
+            <div id="results-section" class="hidden">
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Analysis Results</h2>
+                    
+                    <!-- Export Buttons -->
+                    <div class="mb-6 flex space-x-4">
+                        <button onclick="exportResults('txt')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                            Download as TXT
+                        </button>
+                        <button onclick="exportResults('json')" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                            Download Full Data (JSON)
+                        </button>
+                    </div>
+
+                    <div class="mb-6 flex flex-wrap gap-3">
+                        <button onclick="exportResults('txt')" 
+                                class="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors">
+                            <i class="fas fa-file-alt mr-2"></i>Download as TXT
+                        </button>
+                        <button onclick="exportResults('json')" 
+                                class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors">
+                            <i class="fas fa-file-code mr-2"></i>Download JSON
+                        </button>
+                        <button onclick="exportResults('csv')" 
+                                class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors">
+                            <i class="fas fa-file-csv mr-2"></i>Download CSV
+                        </button>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="text-lg font-medium text-gray-700 mb-2">Summary</h3>
+                        <div id="summary-content" class="bg-gray-50 rounded p-4 text-gray-700 border-l-4 border-blue-500">
+                            Loading summary...
+                        </div>
+                    </div>
+
+                    <div id="transcription-section" class="mb-8">
+                        <h3 class="text-lg font-medium text-gray-700 mb-2">Audio Transcription</h3>
+                        <div id="transcription-content" class="bg-gray-50 rounded p-4 text-gray-700 border-l-4 border-green-500 whitespace-pre-wrap max-h-96 overflow-y-auto">
+                            <!-- Timestamps will be added here -->
+                        </div>
+                    </div>
+
+                    <div id="video-analysis-section" class="hidden">
+                        <h3 class="text-lg font-medium text-gray-700 mb-4">Video Analysis</h3>
+                        <div id="video-stats" class="grid grid-cols-3 gap-4 mb-6">
+                            <div class="bg-gray-50 rounded-lg p-4 text-center">
+                                <div id="frame-count" class="text-3xl font-bold text-blue-600">0</div>
+                                <div class="text-gray-500">Frames Analyzed</div>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-4 text-center">
+                                <div id="object-count" class="text-3xl font-bold text-blue-600">0</div>
+                                <div class="text-gray-500">Objects Detected</div>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-4 text-center">
+                                <div id="people-count" class="text-3xl font-bold text-blue-600">0</div>
+                                <div class="text-gray-500">People Detected</div>
+                            </div>
+                        </div>
+
+                        <div id="frames-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <!-- Will be populated with frame analysis -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 <script>
     // Global variables
     let selectedFile = null;
@@ -74,10 +297,10 @@
             sessionId = uploadResponse.data.session_id;
             document.getElementById('progress-text').textContent = "Starting video processing... This may take several minutes";
 
-            // Step 2: Trigger processing on backend
+            // Step 2: Trigger backend processing
             await axios.post(`/process/${sessionId}`);
 
-            // Step 3: Poll the backend for results until ready
+            // Step 3: Start polling results API
             await checkAnalysisStatus();
 
         } catch (error) {
@@ -226,3 +449,6 @@
     // Initialize UI with default option
     selectOption('all');
 </script>
+
+</body>
+</html>
